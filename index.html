@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rush Alphabet</title>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{--frame:#f785b4;--card:#fff4e0;--ink:#1a1a1a;--bar:#ddd5c8;--sun:#ffd54a;--page:#111;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--frame:#b84c82;--card:#2b2330;--ink:#f6efe6;--bar:#3a3140;--page:#0a0a0a;color-scheme:dark}}
+:root[data-theme="dark"]{--frame:#b84c82;--card:#2b2330;--ink:#f6efe6;--bar:#3a3140;--page:#0a0a0a;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);font-family:"Nunito",system-ui,sans-serif;color:var(--ink);display:flex;justify-content:center}
+.frame{width:100%;max-width:440px;background:var(--frame);padding:10px;border-radius:16px;margin:6px;display:flex;flex-direction:column;gap:8px;position:relative}
+.title{align-self:center;background:var(--card);border:3px solid var(--ink);border-radius:999px;padding:4px 18px;font:700 1rem "Silkscreen",monospace;color:var(--ink);letter-spacing:.05em}
+.hud{display:flex;align-items:center;gap:10px;background:var(--bar);border-radius:10px;padding:8px 10px;font-weight:800;font-size:.85rem}
+.hud .pts{font:700 1.2rem "Silkscreen",monospace}
+.hud .goal{flex:1;line-height:1.15}
+.hearts span{font-size:1.1rem}.hearts .lost{opacity:.25;filter:grayscale(1)}
+.pause{width:38px;height:38px;border-radius:8px;border:2px solid var(--ink);background:var(--sun);color:#1a1a1a;font-weight:800;cursor:pointer}
+.stage{position:relative;align-self:center;width:100%;max-width:360px}
+canvas{display:block;width:100%;height:auto;border-radius:6px;background:#bfe3f2;touch-action:none}
+.ctrl{display:flex;gap:10px}
+.ctrl button{flex:1;height:64px;border-radius:999px;border:0;background:#3b3320;color:#1a1a1a;font-size:1.8rem;cursor:pointer;color:#ffe9a8;touch-action:none}
+.ctrl button:active{background:#5a4b2a}
+.ov{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:14px;background:rgba(0,0,0,.35);z-index:5;border-radius:16px}
+.ov.on{display:flex}
+.box{background:var(--card);border:3px solid var(--ink);border-radius:14px;padding:18px;text-align:center;box-shadow:0 5px 0 var(--ink);width:100%}
+.box h2{font:700 1.7rem "Silkscreen",monospace;margin:0 0 8px}
+.box p{margin:0 0 14px}
+.btn{font:800 1rem "Nunito",sans-serif;color:#1a1a1a;background:var(--sun);border:3px solid var(--ink);border-radius:999px;padding:8px 18px;box-shadow:0 4px 0 var(--ink);cursor:pointer;margin:0 3px}
+.btn.alt{background:var(--card);color:var(--ink)}
+.btn:focus-visible,.pause:focus-visible,.ctrl button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="title">RUSH ALPHABET</div>
+  <div class="hud">
+    <div class="hearts" id="hearts" aria-label="Vies"></div>
+    <div>Points : <span class="pts" id="pts">0000</span></div>
+    <div id="manche">Manche 1/3</div>
+    <div class="goal" id="goal"></div>
+    <button class="pause" id="pauseBtn" aria-label="Pause">❚❚</button>
+  </div>
+  <div class="stage"><canvas id="cv" width="360" height="640"></canvas></div>
+  <div class="ctrl">
+    <button id="left" aria-label="Gauche">◀</button>
+    <button id="right" aria-label="Droite">▶</button>
+  </div>
+  <div class="ov on" id="ov"><div class="box" id="box"></div></div>
+</div>
+<script>
+var cv=document.getElementById("cv"),g=cv.getContext("2d"),W=360,H=640;
+var AL="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""),V="AEIOUY";
+var ROUNDS=[
+ {t:"Récupère toutes les voyelles de l’alphabet",ok:"AEIOUY".split(""),need:8},
+ {t:"Récupère toutes les consonnes",ok:AL.filter(function(c){return V.indexOf(c)<0}),need:10},
+ {t:"Récupère les lettres de A à H",ok:"ABCDEFGH".split(""),need:10}];
+var st="idle",sx=W/2,dir=0,items=[],flakes=[],spawn=0,lives=3,pts=0,ri=0,got=0,flash=0,last=0;
+for(var k=0;k<40;k++)flakes.push({x:Math.random()*W,y:Math.random()*H,s:1+Math.random()*2});
+
+function $(i){return document.getElementById(i)}
+function pad(n){return ("0000"+n).slice(-4)}
+function hud(){
+  var h="";for(var k=0;k<3;k++)h+='<span class="'+(k<lives?"":"lost")+'">🍎</span>';
+  $("hearts").innerHTML=h;$("pts").textContent=pad(pts);
+  $("manche").textContent="Manche "+(ri+1)+"/3";$("goal").textContent=ROUNDS[ri].t;
+}
+function show(title,text,btns){
+  var b=$("box");b.innerHTML="";
+  var h=document.createElement("h2");h.textContent=title;b.appendChild(h);
+  var p=document.createElement("p");p.textContent=text;b.appendChild(p);
+  btns.forEach(function(x){var e=document.createElement("button");e.className="btn"+(x[2]?" alt":"");e.textContent=x[0];e.onclick=x[1];b.appendChild(e)});
+  $("ov").classList.add("on");
+}
+function hide(){$("ov").classList.remove("on")}
+function reset(){lives=3;pts=0;ri=0;got=0;items=[];sx=W/2;spawn=0;hud()}
+function play(){hide();st="play";last=performance.now();requestAnimationFrame(loop)}
+function restart(){reset();play()}
+function pause(msg){
+  if(st!=="play")return;st="pause";
+  show("Pause",msg||"Jeu en pause.",[["Reprendre",play],["Recommencer",restart,1]]);
+}
+function intro(){
+  show(ri===0?"Prêt ?":"Manche "+(ri+1),ROUNDS[ri].t+". Attrape les bonnes lettres, évite les autres !",[["Jouer",play]]);
+}
+function speed(){return 150+ri*45+got*8}
+function addItem(){
+  var r=ROUNDS[ri],good=Math.random()<.5,pool=good?r.ok:AL.filter(function(c){return r.ok.indexOf(c)<0});
+  items.push({x:34+Math.random()*(W-68),y:-30,c:pool[Math.floor(Math.random()*pool.length)],good:good});
+}
+function loss(){
+  lives--;flash=.3;hud();
+  if(lives<=0){st="over";show("Perdu !","Tu as "+pts+" points. Courage, réessaie !",[["Recommencer",restart]])}
+}
+function update(dt){
+  sx+=dir*300*dt;sx=Math.max(30,Math.min(W-30,sx));
+  spawn-=dt;if(spawn<=0){addItem();spawn=Math.max(.45,.95-ri*.12-got*.02)}
+  items.forEach(function(it){it.y+=speed()*dt});
+  for(var k=items.length-1;k>=0;k--){
+    var it=items[k];
+    if(it.y>H-110&&it.y<H-40&&Math.abs(it.x-sx)<38){
+      items.splice(k,1);
+      if(it.good){pts+=10;got++;hud();if(got>=ROUNDS[ri].need){nextRound();return}}
+      else loss();
+      if(st!=="play")return;
+    }else if(it.y>H+30)items.splice(k,1);
+  }
+  flakes.forEach(function(f){f.y+=f.s*20*dt;if(f.y>H)f.y=-4});
+  if(flash>0)flash-=dt;
+}
+function nextRound(){
+  got=0;items=[];
+  if(ri>=2){st="over";show("Bravo ! 🏆","Tu as fini les 3 manches avec "+pts+" points.",[["Rejouer",restart]]);return}
+  ri++;st="idle";hud();intro();
+}
+function bg(){
+  g.fillStyle="#bfe3f2";g.fillRect(0,0,W,H);
+  g.fillStyle="#f1f6f8";
+  for(var k=0;k<14;k++){var x=(k*97)%W,y=(k*173)%H;g.beginPath();g.ellipse(x,y,48,26,k,0,7);g.fill()}
+  g.fillStyle="#fff";flakes.forEach(function(f){g.fillRect(f.x,f.y,f.s,f.s)});
+}
+function sleigh(){
+  var x=sx,y=H-70;
+  g.fillStyle=flash>0?"#fff":"#c9322f";g.fillRect(x-24,y-10,48,34);
+  g.fillStyle="#7a1515";g.fillRect(x-24,y+20,48,4);
+  g.fillStyle="#ffd54a";g.beginPath();g.arc(x,y+8,7,0,7);g.fill();
+  g.fillStyle="#e8a2ff";g.fillRect(x-14,y-20,10,12);g.fillStyle="#5fd0a0";g.fillRect(x+2,y-24,12,16);
+  g.strokeStyle="#b8862b";g.lineWidth=4;g.beginPath();g.moveTo(x-28,y+30);g.lineTo(x+28,y+30);g.stroke();
+}
+function draw(){
+  bg();
+  items.forEach(function(it){
+    g.fillStyle="#fff";g.strokeStyle="#1a1a1a";g.lineWidth=3;
+    g.beginPath();g.arc(it.x,it.y,24,0,7);g.fill();g.stroke();
+    g.fillStyle="#1a1a1a";g.font="700 26px Silkscreen, monospace";g.textAlign="center";g.textBaseline="middle";
+    g.fillText(it.c,it.x,it.y+2);
+  });
+  sleigh();
+}
+function loop(t){
+  if(st!=="play")return;
+  var dt=Math.min(.05,(t-last)/1000);last=t;
+  update(dt);draw();
+  if(st==="play")requestAnimationFrame(loop);
+}
+/* contrôles */
+function hold(id,d){var b=$(id);
+  ["pointerdown"].forEach(function(e){b.addEventListener(e,function(ev){ev.preventDefault();dir=d})});
+  ["pointerup","pointerleave","pointercancel"].forEach(function(e){b.addEventListener(e,function(){if(dir===d)dir=0})});
+}
+hold("left",-1);hold("right",1);
+document.addEventListener("keydown",function(e){
+  if(e.key==="ArrowLeft"||e.key==="q"||e.key==="a")dir=-1;
+  if(e.key==="ArrowRight"||e.key==="d")dir=1;
+  if(e.key==="p"||e.key==="Escape")pause("Jeu en pause.");
+});
+document.addEventListener("keyup",function(e){
+  if(["ArrowLeft","ArrowRight","q","a","d"].indexOf(e.key)>=0)dir=0;
+});
+cv.addEventListener("pointermove",function(e){
+  if(e.buttons||e.pointerType==="touch"){var r=cv.getBoundingClientRect();sx=(e.clientX-r.left)/r.width*W}
+});
+$("pauseBtn").onclick=function(){pause("Jeu en pause.")};
+document.addEventListener("visibilitychange",function(){if(document.hidden)pause("Jeu en pause car tu as quitté l’onglet.")});
+reset();draw();intro();
+</script>
+</body>
+</html>
